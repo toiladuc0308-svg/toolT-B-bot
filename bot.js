@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { Bot, InlineKeyboard } from 'grammy';
 import { sessionManager } from './lib/botSession.js';
 import { executeVideoScene, uploadTelegramFile } from './lib/botEngine.js';
+import { buildPairs } from './lib/engine.js';
+import { DEFAULT_PROMPT, DEFAULT_MODEL_ID } from './data/config.js';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const adminId = process.env.ADMIN_CHAT_ID ? Number(process.env.ADMIN_CHAT_ID) : null;
@@ -33,6 +35,21 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
+let currentPrompt = DEFAULT_PROMPT;
+let currentModel = DEFAULT_MODEL_ID;
+let currentSettings = {
+  ratio: '9:16',
+  duration: 'auto', // 'auto' (mặc định theo video ref làm tròn Math.ceil) hoặc '5', '10'
+  resolution: '720p',
+};
+
+let runSettings = {
+  randomFashion: false,
+  randomVideo: false,
+  fashionOnce: false,
+  videoOnce: false,
+};
+
 // Lệnh /reset - Khởi động lại trạng thái bot
 bot.command('reset', async (ctx) => {
   sessionManager.reset();
@@ -43,12 +60,19 @@ bot.command('reset', async (ctx) => {
     duration: 'auto',
     resolution: '720p',
   };
+  runSettings = {
+    randomFashion: false,
+    randomVideo: false,
+    fashionOnce: false,
+    videoOnce: false,
+  };
   await ctx.reply(
     `🔄 **ĐÃ RESET TOÀN BỘ TRẠNG THÁI BOT!**\n\n` +
     `• Model: \`${currentModel}\`\n` +
     `• Tỉ lệ: \`${currentSettings.ratio}\`\n` +
     `• Thời lượng: \`Tự động theo video mẫu (Math.ceil)\`\n` +
-    `• Giỏ hàng: Đã làm trống\n\n` +
+    `• Random & Khóa 1 lần: Đã tắt\n` +
+    `• Giỏ hàng & Lịch sử khóa: Đã làm trống\n\n` +
     `👉 Sếp có thể gửi lại /caidat hoặc gửi mẻ ảnh & video mới để test nhé!`,
     { parse_mode: 'Markdown' }
   );
@@ -59,16 +83,40 @@ bot.command('start', async (ctx) => {
   await ctx.reply(
     `👋 **Chào mừng Sếp đến với Trợ Lý Seedance Studio!**\n\n` +
     `🤖 Bot này giúp Sếp nạp mẻ render tự động và kiểm duyệt video siêu tốc trên điện thoại.\n\n` +
-    `📌 **Cách nạp mẻ video (2 Ảnh + Nhiều Video):**\n` +
+    `📌 **Cách nạp mẻ video (1 Ảnh mặt + 1 hoặc nhiều Outfit + Nhiều Video):**\n` +
     `1. Gửi/Chuyển tiếp **Ảnh khuôn mặt** (kèm caption \`#mat\` hoặc gửi đầu tiên).\n` +
-    `2. Gửi/Chuyển tiếp **Ảnh trang phục** (kèm caption \`#outfit\` hoặc gửi thứ hai).\n` +
+    `2. Gửi/Chuyển tiếp **Ảnh trang phục** (kèm caption \`#outfit\` hoặc gửi tiếp theo, có thể nạp nhiều outfit).\n` +
     `3. Gửi/Chuyển tiếp hàng loạt **Video mẫu**.\n` +
-    `4. Gõ **/chay** để bắt đầu cày ngầm ${concurrencyLimit} luồng!\n\n` +
+    `4. Gõ **/caidat** để bật/tắt Random hoặc Khóa dùng 1 lần.\n` +
+    `5. Gõ **/chay** để bắt đầu render ngầm ${concurrencyLimit} luồng!\n\n` +
     `⚡ **Các lệnh điều khiển:**\n` +
-    `• /xem - Xem mẻ file hiện tại\n` +
+    `• /xem - Xem tình trạng mẻ file hiện tại\n` +
+    `• /caidat - Đổi Tỉ lệ / Thời lượng / Bật tắt Random & Khóa 1 lần\n` +
+    `• /prompt - Xem hoặc đổi Prompt tạo video\n` +
     `• /status - Xem tiến độ render\n` +
     `• /chay - Bắt đầu render mẻ\n` +
-    `• /huy - Hủy và làm mới mẻ hiện tại`,
+    `• /huy - Hủy và làm mới mẻ hiện tại\n` +
+    `• /reset - Reset toàn bộ bot về mặc định`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+// Lệnh /status - Xem tiến độ render
+bot.command('status', async (ctx) => {
+  const s = sessionManager.getSummary();
+  const durSec = sessionManager.session.startedAt ? Math.round((Date.now() - sessionManager.session.startedAt) / 1000) : 0;
+  await ctx.reply(
+    `📊 **TIẾN ĐỘ RENDER HIỆN TẠI:**\n\n` +
+    `• Trạng thái: **${s.status === 'running' ? '⏳ ĐANG RENDER' : '💤 ĐANG RẢNH'}**\n` +
+    `• Thời gian chạy: ${durSec > 0 ? `${durSec} giây` : '0s'}\n` +
+    `• Số video nạp vào: ${s.videoCount}\n` +
+    `• Số outfit nạp vào: ${s.fashionCount}\n` +
+    `• Random: Outfit [${runSettings.randomFashion ? '✅ BẬT' : '❌ TẮT'}] | Video [${runSettings.randomVideo ? '✅ BẬT' : '❌ TẮT'}]\n` +
+    `• Khóa 1 lần: Outfit [${runSettings.fashionOnce ? '✅ BẬT' : '❌ TẮT'}] | Video [${runSettings.videoOnce ? '✅ BẬT' : '❌ TẮT'}]\n` +
+    (sessionManager.session.usedVideo.length > 0 || sessionManager.session.usedFashion.length > 0
+      ? `• Đã render/khóa: ${sessionManager.session.usedFashion.length} outfit, ${sessionManager.session.usedVideo.length} video\n`
+      : '') +
+    `\n👉 Dùng /caidat để đổi cấu hình hoặc /xem để kiểm tra file.`,
     { parse_mode: 'Markdown' }
   );
 });
@@ -79,22 +127,17 @@ bot.command('xem', async (ctx) => {
   const txt =
     `📋 **Tình trạng mẻ hiện tại:**\n\n` +
     `• Ảnh mặt: ${s.hasCharacter ? '✅ Đã nạp' : '❌ Chưa có'}\n` +
-    `• Ảnh trang phục: ${s.hasFashion ? '✅ Đã nạp' : '❌ Chưa có'}\n` +
-    `• Số video mẫu: **${s.videoCount} video**\n` +
-    `• Trạng thái: **${s.status}**\n\n` +
-    (s.isReady ? '👉 Đã đủ điều kiện! Gõ **/chay** để bắt đầu render.' : '⚠️ Cần đủ 1 ảnh mặt + 1 ảnh outfit + ít nhất 1 video để chạy.');
+    `• Ảnh trang phục: ${s.fashionCount > 0 ? `✅ Đã nạp (${s.fashionCount} outfit)` : '❌ Chưa có'}\n` +
+    `• Số video mẫu: **${s.videoCount} video**\n\n` +
+    `🎲 **Chế độ Random:**\n` +
+    `• Random Outfit: [${runSettings.randomFashion ? '✅ BẬT' : '❌ TẮT'}] | Random Video: [${runSettings.randomVideo ? '✅ BẬT' : '❌ TẮT'}]\n` +
+    `🔒 **Khóa Dùng 1 lần:**\n` +
+    `• Khóa Outfit 1 lần: [${runSettings.fashionOnce ? '✅ BẬT' : '❌ TẮT'}] | Khóa Video 1 lần: [${runSettings.videoOnce ? '✅ BẬT' : '❌ TẮT'}]\n` +
+    (runSettings.fashionOnce || runSettings.videoOnce ? `• Đã khóa: ${sessionManager.session.usedFashion.length} outfit, ${sessionManager.session.usedVideo.length} video\n` : '') +
+    `\n• Trạng thái: **${s.status === 'running' ? '⏳ ĐANG RENDER' : '💤 SẴN SÀNG'}**\n\n` +
+    (s.isReady ? '👉 Đã đủ điều kiện! Gõ **/chay** để bắt đầu render.' : '⚠️ Cần đủ 1 ảnh mặt + ít nhất 1 ảnh outfit + ít nhất 1 video để chạy.');
   await ctx.reply(txt, { parse_mode: 'Markdown' });
 });
-
-import { DEFAULT_PROMPT, DEFAULT_MODEL_ID } from './data/config.js';
-
-let currentPrompt = DEFAULT_PROMPT;
-let currentModel = DEFAULT_MODEL_ID;
-let currentSettings = {
-  ratio: '9:16',
-  duration: 'auto', // 'auto' (mặc định theo video ref làm tròn Math.ceil) hoặc '5', '10'
-  resolution: '720p',
-};
 
 // Lệnh /prompt - Xem hoặc đổi Prompt
 bot.command('prompt', async (ctx) => {
@@ -116,25 +159,44 @@ function formatDurationLabel(dur) {
   return `${dur}s (Cố định)`;
 }
 
-// Lệnh /caidat - Xem và đổi Model / Tỉ lệ
-bot.command('caidat', async (ctx) => {
-  const keyboard = new InlineKeyboard()
-    .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
-    .row()
-    .text(`⏱️ Thời lượng: ${currentSettings.duration === 'auto' ? 'Auto (Theo video ref)' : `${currentSettings.duration}s`}`, 'toggle:duration')
-    .row()
-    .text(`🤖 Model: ${currentModel}`, 'toggle:model');
-
-  await ctx.reply(
+function formatCaidatText() {
+  return (
     `⚙️ **CẤU HÌNH MODEL & THÔNG SỐ RENDER:**\n\n` +
     `• **Model AI:** \`${currentModel}\`\n` +
     `• **Tỉ lệ khung hình:** \`${currentSettings.ratio}\`\n` +
     `• **Thời lượng video:** \`${formatDurationLabel(currentSettings.duration)}\`\n` +
-    `• **Độ phân giải:** \`${currentSettings.resolution}\`\n` +
     `• **Số luồng song song:** \`${concurrencyLimit} luồng\`\n\n` +
-    `👉 Bấm các nút bên dưới để đổi nhanh thông số:`,
-    { parse_mode: 'Markdown', reply_markup: keyboard }
+    `🎲 **Chế độ Random:**\n` +
+    `• Random Outfit: ${runSettings.randomFashion ? '✅ BẬT' : '❌ TẮT'}\n` +
+    `• Random Video: ${runSettings.randomVideo ? '✅ BẬT' : '❌ TẮT'}\n\n` +
+    `🔒 **Chế độ Dùng 1 lần:**\n` +
+    `• Khóa Outfit 1 lần: ${runSettings.fashionOnce ? '✅ BẬT' : '❌ TẮT'}\n` +
+    `• Khóa Video 1 lần: ${runSettings.videoOnce ? '✅ BẬT' : '❌ TẮT'}\n` +
+    (sessionManager.session.usedFashion.length > 0 || sessionManager.session.usedVideo.length > 0
+      ? `• Đã khóa: ${sessionManager.session.usedFashion.length} outfit, ${sessionManager.session.usedVideo.length} video\n`
+      : '') +
+    `\n👉 Bấm các nút bên dưới để bật/tắt thiết lập:`
   );
+}
+
+function buildCaidatKeyboard() {
+  return new InlineKeyboard()
+    .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
+    .text(`⏱️ ${currentSettings.duration === 'auto' ? 'Auto (Ref)' : `${currentSettings.duration}s`}`, 'toggle:duration')
+    .row()
+    .text(`🎲 Rnd Outfit: ${runSettings.randomFashion ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:rnd_fashion')
+    .text(`🎲 Rnd Video: ${runSettings.randomVideo ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:rnd_video')
+    .row()
+    .text(`🔒 Outfit 1 lần: ${runSettings.fashionOnce ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:once_fashion')
+    .text(`🔒 Video 1 lần: ${runSettings.videoOnce ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:once_video');
+}
+
+// Lệnh /caidat - Xem và đổi Model / Tỉ lệ / Random / 1 Lần
+bot.command('caidat', async (ctx) => {
+  await ctx.reply(formatCaidatText(), {
+    parse_mode: 'Markdown',
+    reply_markup: buildCaidatKeyboard(),
+  });
 });
 
 // Lệnh /huy
@@ -150,15 +212,13 @@ bot.on(':photo', async (ctx) => {
   const fileId = highestPhoto.file_id;
   const caption = (ctx.message.caption || '').toLowerCase();
 
-  if (caption.includes('#mat') || caption.includes('#face') || (!sessionManager.session.character && !caption.includes('#outfit'))) {
+  if (caption.includes('#mat') || caption.includes('#face') || (!sessionManager.session.character && !caption.includes('#outfit') && !caption.includes('#do'))) {
     sessionManager.setCharacter({ fileId, name: 'character.jpg' });
     await ctx.reply('✅ **Đã nhận ẢNH KHUÔN MẶT** (Nhân vật)', { parse_mode: 'Markdown' });
-  } else if (caption.includes('#outfit') || caption.includes('#do') || caption.includes('#ao') || (!sessionManager.session.fashion)) {
-    sessionManager.setFashion({ fileId, name: 'fashion.jpg' });
-    await ctx.reply('✅ **Đã nhận ẢNH TRANG PHỤC** (Outfit)', { parse_mode: 'Markdown' });
   } else {
-    sessionManager.setFashion({ fileId, name: 'fashion.jpg' });
-    await ctx.reply('✅ Đã cập nhật lại **Ảnh trang phục**.', { parse_mode: 'Markdown' });
+    sessionManager.addFashion({ fileId, name: `outfit_${sessionManager.session.fashions.length + 1}.jpg` });
+    const count = sessionManager.session.fashions.length;
+    await ctx.reply(`✅ **Đã nhận ẢNH TRANG PHỤC #${count}** (Tổng: ${count} outfit)`, { parse_mode: 'Markdown' });
   }
 });
 
@@ -194,58 +254,104 @@ const qcStore = new Map();
 bot.command(['chay', 'run'], async (ctx) => {
   const s = sessionManager.getSummary();
   if (!s.isReady) {
-    return ctx.reply('⚠️ Chưa đủ file! Vui lòng nạp đủ: 1 ảnh mặt + 1 ảnh trang phục + ít nhất 1 video mẫu.');
+    return ctx.reply('⚠️ Chưa đủ file! Vui lòng nạp đủ: 1 ảnh mặt + ít nhất 1 ảnh trang phục + ít nhất 1 video mẫu.');
   }
 
   if (sessionManager.session.status === 'running') {
     return ctx.reply('⏳ Một mẻ render đang chạy rồi Sếp ơi! Gõ /status để xem tiến độ.');
   }
 
+  // Chuẩn bị danh sách fashion và video cho buildPairs
+  const fashionItems = sessionManager.session.fashions.map((f) => ({
+    ...f,
+    url: f.fileId,
+  }));
+
+  const videoItems = sessionManager.session.videos.map((v) => ({
+    ...v,
+    url: v.fileId,
+  }));
+
+  let pairs;
+  try {
+    pairs = buildPairs({
+      characterUrl: sessionManager.session.character.fileId,
+      fashion: fashionItems,
+      videos: videoItems,
+      maxVideos: videoItems.length,
+      randomFashion: runSettings.randomFashion,
+      randomVideo: runSettings.randomVideo,
+      usedFashion: sessionManager.session.usedFashion,
+      usedVideo: sessionManager.session.usedVideo,
+      fashionOnce: runSettings.fashionOnce,
+      videoOnce: runSettings.videoOnce,
+    });
+  } catch (err) {
+    return ctx.reply(`⚠️ ${err.message}`);
+  }
+
   sessionManager.session.status = 'running';
   sessionManager.session.startedAt = Date.now();
 
-  await ctx.reply(`🚀 **Bắt đầu xử lý mẻ ${s.videoCount} video (${concurrencyLimit} luồng song song)...**\n\n` +
-    `☕ Sếp cứ nghỉ ngơi, khi có video render xong Bot sẽ gửi về kèm nút duyệt ngay!`, { parse_mode: 'Markdown' });
+  await ctx.reply(
+    `🚀 **Bắt đầu xử lý mẻ ${pairs.length} video (${concurrencyLimit} luồng song song)...**\n\n` +
+    `• Random: Outfit [${runSettings.randomFashion ? '✅ BẬT' : '❌ TẮT'}] | Video [${runSettings.randomVideo ? '✅ BẬT' : '❌ TẮT'}]\n` +
+    `• Khóa 1 lần: Outfit [${runSettings.fashionOnce ? '✅ BẬT' : '❌ TẮT'}] | Video [${runSettings.videoOnce ? '✅ BẬT' : '❌ TẮT'}]\n\n` +
+    `☕ Sếp cứ nghỉ ngơi, khi có video render xong Bot sẽ gửi về kèm nút duyệt ngay!`,
+    { parse_mode: 'Markdown' }
+  );
 
-  // 1. Tải link ảnh trực tiếp
-  let charDirectUrl, fashionDirectUrl;
-  try {
-    const charFile = await bot.api.getFile(sessionManager.session.character.fileId);
-    const charTeleUrl = `https://api.telegram.org/file/bot${token}/${charFile.file_path}`;
-    charDirectUrl = await uploadTelegramFile(charTeleUrl, 'character.jpg');
-
-    const fashionFile = await bot.api.getFile(sessionManager.session.fashion.fileId);
-    const fashionTeleUrl = `https://api.telegram.org/file/bot${token}/${fashionFile.file_path}`;
-    fashionDirectUrl = await uploadTelegramFile(fashionTeleUrl, 'fashion.jpg');
-  } catch (err) {
-    sessionManager.session.status = 'idle';
-    return ctx.reply(`❌ Lỗi tải ảnh lên server: ${err.message}`);
+  // Map cache direct URLs để không tải trùng nhiều lần
+  const directUrlCache = new Map();
+  async function getDirectUrl(fileId, filename) {
+    if (directUrlCache.has(fileId)) return directUrlCache.get(fileId);
+    const fileInfo = await bot.api.getFile(fileId);
+    const teleUrl = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
+    const directUrl = await uploadTelegramFile(teleUrl, filename);
+    directUrlCache.set(fileId, directUrl);
+    return directUrl;
   }
 
-  // 2. Chạy hàng đợi cuốn chiếu
-  const videoList = [...sessionManager.session.videos];
+  // 1. Tải link ảnh nhân vật trước
+  let charDirectUrl;
+  try {
+    charDirectUrl = await getDirectUrl(sessionManager.session.character.fileId, 'character.jpg');
+  } catch (err) {
+    sessionManager.session.status = 'idle';
+    return ctx.reply(`❌ Lỗi tải ảnh mặt lên server: ${err.message}`);
+  }
+
+  // 2. Chạy hàng đợi cuốn chiếu theo pairs
   let cursor = 0;
   let doneCount = 0;
   let errorCount = 0;
 
   const runWorker = async (workerId) => {
-    while (cursor < videoList.length) {
+    while (cursor < pairs.length) {
       const idx = cursor;
       cursor += 1;
-      const vidItem = videoList[idx];
+      const pair = pairs[idx];
       const sceneId = `sc_${Date.now()}_${idx + 1}`;
 
       try {
-        console.info(`[Worker ${workerId}] Đang xử lý video #${idx + 1}/${videoList.length} (ref: ${vidItem.seconds || 0}s)`);
-        const vidFile = await bot.api.getFile(vidItem.fileId);
-        const vidTeleUrl = `https://api.telegram.org/file/bot${token}/${vidFile.file_path}`;
-        const vidDirectUrl = await uploadTelegramFile(vidTeleUrl, vidItem.name || 'clip.mp4');
+        console.info(`[Worker ${workerId}] Đang xử lý video #${idx + 1}/${pairs.length} (ref: ${pair.video.seconds || 0}s)`);
+
+        // Đánh dấu đã dùng nếu bật chế độ 1 lần
+        if (runSettings.fashionOnce && !sessionManager.session.usedFashion.includes(pair.fashion.fileId)) {
+          sessionManager.session.usedFashion.push(pair.fashion.fileId);
+        }
+        if (runSettings.videoOnce && !sessionManager.session.usedVideo.includes(pair.video.fileId)) {
+          sessionManager.session.usedVideo.push(pair.video.fileId);
+        }
+
+        const fashionDirectUrl = await getDirectUrl(pair.fashion.fileId, pair.fashion.name || 'fashion.jpg');
+        const vidDirectUrl = await getDirectUrl(pair.video.fileId, pair.video.name || 'clip.mp4');
 
         const out = await executeVideoScene({
           characterUrl: charDirectUrl,
           fashionUrl: fashionDirectUrl,
           videoUrl: vidDirectUrl,
-          refSeconds: vidItem.seconds || 0,
+          refSeconds: pair.video.seconds || 0,
           modelId: currentModel,
           settings: currentSettings,
           prompt: currentPrompt,
@@ -259,7 +365,7 @@ bot.command(['chay', 'run'], async (ctx) => {
           charDirectUrl,
           fashionDirectUrl,
           vidDirectUrl,
-          refSeconds: vidItem.seconds || 0,
+          refSeconds: pair.video.seconds || 0,
         });
 
         // Tạo bàn phím duyệt QC
@@ -269,7 +375,7 @@ bot.command(['chay', 'run'], async (ctx) => {
           .text('❌ Bỏ qua', `qc:skip:${sceneId}`);
 
         await bot.api.sendVideo(ctx.chat.id, out.url, {
-          caption: `✨ **Video #${idx + 1}/${videoList.length} HOÀN TẤT**\n\n👉 Sếp xem và bấm nút duyệt bên dưới:`,
+          caption: `✨ **Video #${idx + 1}/${pairs.length} HOÀN TẤT**\n\n👉 Sếp xem và bấm nút duyệt bên dưới:`,
           parse_mode: 'Markdown',
           reply_markup: keyboard,
         });
@@ -281,13 +387,13 @@ bot.command(['chay', 'run'], async (ctx) => {
     }
   };
 
-  const activeWorkers = Math.min(concurrencyLimit, videoList.length);
+  const activeWorkers = Math.min(concurrencyLimit, pairs.length);
   Promise.all(Array.from({ length: activeWorkers }).map((_, wId) => runWorker(wId + 1))).then(async () => {
     sessionManager.session.status = 'idle';
     await bot.api.sendMessage(
       ctx.chat.id,
       `🎉 **ĐÃ HOÀN TẤT TOÀN BỘ MẺ RENDER!**\n\n` +
-      `• Tổng số: ${videoList.length} video\n` +
+      `• Tổng số: ${pairs.length} video\n` +
       `• Thành công: ${doneCount}\n` +
       `• Lỗi: ${errorCount}\n\n` +
       `Sếp có thể nạp mẻ tiếp theo bằng cách gửi ảnh và video mới!`
@@ -351,7 +457,7 @@ bot.callbackQuery(/^qc:(pass|retry|skip):(.+)$/, async (ctx) => {
 });
 
 // Xử lý nút bấm cài đặt (/caidat)
-bot.callbackQuery(/^toggle:(ratio|duration|model)$/, async (ctx) => {
+bot.callbackQuery(/^toggle:(ratio|duration|model|rnd_fashion|rnd_video|once_fashion|once_video)$/, async (ctx) => {
   const type = ctx.match[1];
   if (type === 'ratio') {
     currentSettings.ratio = currentSettings.ratio === '9:16' ? '16:9' : '9:16';
@@ -361,27 +467,22 @@ bot.callbackQuery(/^toggle:(ratio|duration|model)$/, async (ctx) => {
     else currentSettings.duration = 'auto';
   } else if (type === 'model') {
     currentModel = currentModel === 'wan_3_0' ? 'seedance_20_pro_edit' : 'wan_3_0';
+  } else if (type === 'rnd_fashion') {
+    runSettings.randomFashion = !runSettings.randomFashion;
+  } else if (type === 'rnd_video') {
+    runSettings.randomVideo = !runSettings.randomVideo;
+  } else if (type === 'once_fashion') {
+    runSettings.fashionOnce = !runSettings.fashionOnce;
+  } else if (type === 'once_video') {
+    runSettings.videoOnce = !runSettings.videoOnce;
   }
 
-  await ctx.answerCallbackQuery({ text: '✅ Đã đổi thiết lập!' });
+  await ctx.answerCallbackQuery({ text: '✅ Đã cập nhật thiết lập!' });
 
-  const keyboard = new InlineKeyboard()
-    .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
-    .row()
-    .text(`⏱️ Thời lượng: ${currentSettings.duration === 'auto' ? 'Auto (Theo video ref)' : `${currentSettings.duration}s`}`, 'toggle:duration')
-    .row()
-    .text(`🤖 Model: ${currentModel}`, 'toggle:model');
-
-  await ctx.editMessageText(
-    `⚙️ **CẤU HÌNH MODEL & THÔNG SỐ RENDER:**\n\n` +
-    `• **Model AI:** \`${currentModel}\`\n` +
-    `• **Tỉ lệ khung hình:** \`${currentSettings.ratio}\`\n` +
-    `• **Thời lượng video:** \`${formatDurationLabel(currentSettings.duration)}\`\n` +
-    `• **Độ phân giải:** \`${currentSettings.resolution}\`\n` +
-    `• **Số luồng song song:** \`${concurrencyLimit} luồng\`\n\n` +
-    `👉 Bấm các nút bên dưới để đổi nhanh thông số:`,
-    { parse_mode: 'Markdown', reply_markup: keyboard }
-  );
+  await ctx.editMessageText(formatCaidatText(), {
+    parse_mode: 'Markdown',
+    reply_markup: buildCaidatKeyboard(),
+  });
 });
 
 // Khởi động bot
