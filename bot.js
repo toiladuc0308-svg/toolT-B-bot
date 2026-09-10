@@ -41,6 +41,7 @@ let currentSettings = {
   ratio: '9:16',
   duration: 'auto', // 'auto' (mặc định theo video ref làm tròn Math.ceil) hoặc '5', '10'
   resolution: '720p',
+  mode: 'vip',
 };
 
 export const SUPPORTED_MODELS = [
@@ -54,6 +55,76 @@ export const SUPPORTED_MODELS = [
 export function getModelName(id) {
   const m = SUPPORTED_MODELS.find((x) => x.id === id);
   return m ? m.name : id;
+}
+
+export const MODEL_RESOLUTIONS = {
+  wan_3_0: ['720p', '1080p', '480p'],
+  seedance_20_pro_edit: ['720p', '1080p', '4k'],
+  seedance_25_omni: ['720p', '1080p', '480p'],
+  veo_omni_edit: ['720p', '1080p'],
+  'kling-o3-edit': ['720p', '1080p'],
+};
+
+export const MODEL_MODES = {
+  wan_3_0: [
+    { type: 'vip', name: 'VIP (Nhanh)' },
+    { type: 'cheap', name: 'Cheap (Tiết kiệm)' },
+  ],
+  seedance_20_pro_edit: [
+    { type: 'business_fast', name: 'Fast' },
+    { type: 'business_professional', name: 'Professional' },
+    { type: 'business_fast_vip', name: 'Fast - VIP' },
+    { type: 'business_professional_vip', name: 'Pro - VIP' },
+  ],
+  seedance_25_omni: [
+    { type: 'business_professional', name: 'Professional' },
+    { type: 'business_professional_vip', name: 'Pro - VIP' },
+  ],
+  veo_omni_edit: [
+    { type: 'standard', name: 'Standard' },
+  ],
+  'kling-o3-edit': [
+    { type: 'standard', name: 'Standard' },
+  ],
+};
+
+export function getAvailableResolutions(modelId) {
+  return MODEL_RESOLUTIONS[modelId] || ['720p', '1080p', '480p'];
+}
+
+export function getAvailableModes(modelId) {
+  return MODEL_MODES[modelId] || [{ type: 'standard', name: 'Standard' }];
+}
+
+export function getModeName(modelId, modeType) {
+  const modes = getAvailableModes(modelId);
+  const found = modes.find((m) => m.type === modeType);
+  return found ? found.name : (modeType || 'Standard');
+}
+
+export function toggleNextResolution() {
+  const list = getAvailableResolutions(currentModel);
+  const idx = list.indexOf(currentSettings.resolution);
+  const nextIdx = (idx + 1) % list.length;
+  currentSettings.resolution = list[nextIdx];
+}
+
+export function toggleNextMode() {
+  const list = getAvailableModes(currentModel);
+  const idx = list.findIndex((m) => m.type === currentSettings.mode);
+  const nextIdx = (idx + 1) % list.length;
+  currentSettings.mode = list[nextIdx].type;
+}
+
+export function ensureModelSettingsValid() {
+  const resList = getAvailableResolutions(currentModel);
+  if (!resList.includes(currentSettings.resolution)) {
+    currentSettings.resolution = resList[0] || '720p';
+  }
+  const modeList = getAvailableModes(currentModel);
+  if (!modeList.some((m) => m.type === currentSettings.mode)) {
+    currentSettings.mode = modeList[0]?.type || 'standard';
+  }
 }
 
 let runSettings = {
@@ -72,6 +143,7 @@ bot.command('reset', async (ctx) => {
     ratio: '9:16',
     duration: 'auto',
     resolution: '720p',
+    mode: 'vip',
   };
   runSettings = {
     randomFashion: false,
@@ -81,8 +153,10 @@ bot.command('reset', async (ctx) => {
   };
   await ctx.reply(
     `🔄 **ĐÃ RESET TOÀN BỘ TRẠNG THÁI BOT!**\n\n` +
-    `• Model: \`${currentModel}\`\n` +
+    `• Model: \`${getModelName(currentModel)}\` (\`${currentModel}\`)\n` +
     `• Tỉ lệ: \`${currentSettings.ratio}\`\n` +
+    `• Độ phân giải: \`${currentSettings.resolution}\`\n` +
+    `• Chế độ (Mode): \`${getModeName(currentModel, currentSettings.mode)}\`\n` +
     `• Thời lượng: \`Tự động theo video mẫu (Math.ceil)\`\n` +
     `• Random & Khóa 1 lần: Đã tắt\n` +
     `• Giỏ hàng & Lịch sử khóa: Đã làm trống\n\n` +
@@ -178,6 +252,8 @@ function formatCaidatText() {
     `⚙️ **CẤU HÌNH MODEL & THÔNG SỐ RENDER:**\n\n` +
     `• **Model AI:** \`${getModelName(currentModel)}\` (\`${currentModel}\`)\n` +
     `• **Tỉ lệ khung hình:** \`${currentSettings.ratio}\`\n` +
+    `• **Độ phân giải:** \`${currentSettings.resolution}\`\n` +
+    `• **Chế độ (Mode):** \`${getModeName(currentModel, currentSettings.mode)}\`\n` +
     `• **Thời lượng video:** \`${formatDurationLabel(currentSettings.duration)}\`\n` +
     `• **Số luồng song song:** \`${concurrencyLimit} luồng\`\n\n` +
     `🎲 **Chế độ Random:**\n` +
@@ -194,11 +270,15 @@ function formatCaidatText() {
 }
 
 function buildCaidatKeyboard() {
+  const modeLabel = getModeName(currentModel, currentSettings.mode);
   return new InlineKeyboard()
     .text(`🤖 Model: ${getModelName(currentModel)}`, 'menu:model')
     .row()
     .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
+    .text(`📺 Phân giải: ${currentSettings.resolution}`, 'toggle:resolution')
+    .row()
     .text(`⏱️ ${currentSettings.duration === 'auto' ? 'Auto (Ref)' : `${currentSettings.duration}s`}`, 'toggle:duration')
+    .text(`⚡ Mode: ${modeLabel}`, 'toggle:mode')
     .row()
     .text(`🎲 Rnd Outfit: ${runSettings.randomFashion ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:rnd_fashion')
     .text(`🎲 Rnd Video: ${runSettings.randomVideo ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:rnd_video')
@@ -538,6 +618,7 @@ bot.callbackQuery('menu:caidat', async (ctx) => {
 bot.callbackQuery(/^set_model:(.+)$/, async (ctx) => {
   const selectedId = ctx.match[1];
   currentModel = selectedId;
+  ensureModelSettingsValid();
   await ctx.answerCallbackQuery({ text: `✅ Đã chọn ${getModelName(selectedId)}!` });
   await ctx.editMessageText(formatModelSelectText(), {
     parse_mode: 'Markdown',
@@ -546,16 +627,23 @@ bot.callbackQuery(/^set_model:(.+)$/, async (ctx) => {
 });
 
 // Xử lý nút bấm cài đặt (/caidat)
-bot.callbackQuery(/^toggle:(ratio|duration|model|rnd_fashion|rnd_video|once_fashion|once_video)$/, async (ctx) => {
+bot.callbackQuery(/^toggle:(ratio|duration|resolution|mode|model|rnd_fashion|rnd_video|once_fashion|once_video)$/, async (ctx) => {
   const type = ctx.match[1];
   if (type === 'ratio') {
-    currentSettings.ratio = currentSettings.ratio === '9:16' ? '16:9' : '9:16';
+    const ratios = ['9:16', '16:9', '1:1', '3:4', '4:3'];
+    const idx = ratios.indexOf(currentSettings.ratio);
+    currentSettings.ratio = ratios[(idx + 1) % ratios.length];
+  } else if (type === 'resolution') {
+    toggleNextResolution();
+  } else if (type === 'mode') {
+    toggleNextMode();
   } else if (type === 'duration') {
     if (currentSettings.duration === 'auto') currentSettings.duration = '5';
     else if (currentSettings.duration === '5') currentSettings.duration = '10';
     else currentSettings.duration = 'auto';
   } else if (type === 'model') {
     currentModel = currentModel === 'wan_3_0' ? 'seedance_20_pro_edit' : 'wan_3_0';
+    ensureModelSettingsValid();
   } else if (type === 'rnd_fashion') {
     runSettings.randomFashion = !runSettings.randomFashion;
   } else if (type === 'rnd_video') {
