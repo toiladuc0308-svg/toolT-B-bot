@@ -1,4 +1,4 @@
-export const DEFAULT_MODEL_ID = 'seedance_20_pro_edit';
+export const DEFAULT_MODEL_ID = 'wan_3_0';
 
 export const DEFAULT_PROMPT = `Create a highly accurate Seedance video recreation using the references below.
 

@@ -310,7 +310,7 @@ bot.callbackQuery(/^toggle:(ratio|duration|model)$/, async (ctx) => {
   } else if (type === 'duration') {
     currentSettings.duration = currentSettings.duration === '5' ? '10' : '5';
   } else if (type === 'model') {
-    currentModel = currentModel === 'seedance_20_pro_edit' ? 'seedance_20_fast' : 'seedance_20_pro_edit';
+    currentModel = currentModel === 'wan_3_0' ? 'seedance_20_pro_edit' : 'wan_3_0';
   }
 
   await ctx.answerCallbackQuery({ text: '✅ Đã đổi thiết lập!' });
