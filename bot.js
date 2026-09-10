@@ -16,12 +16,42 @@ if (!token) {
 
 const bot = new Bot(token);
 
-// Middleware kiểm tra quyền Admin
+// Error handler
+bot.catch((err) => {
+  console.error('[Bot Error]:', err.error || err);
+});
+
+// Middleware log tin nhắn & kiểm tra quyền Admin
 bot.use(async (ctx, next) => {
+  const fromUser = ctx.from?.username || ctx.from?.id;
+  const action = ctx.message?.text || (ctx.message?.photo ? 'gửi ảnh' : ctx.message?.video ? 'gửi video' : ctx.callbackQuery?.data ? `bấm nút ${ctx.callbackQuery.data}` : 'khác');
+  console.info(`[Telegram] ${fromUser} -> ${action}`);
+
   if (adminId && ctx.from?.id !== adminId) {
     return ctx.reply('⛔ Bạn không có quyền sử dụng bot này.');
   }
   return next();
+});
+
+// Lệnh /reset - Khởi động lại trạng thái bot
+bot.command('reset', async (ctx) => {
+  sessionManager.reset();
+  currentPrompt = DEFAULT_PROMPT;
+  currentModel = DEFAULT_MODEL_ID;
+  currentSettings = {
+    ratio: '9:16',
+    duration: 'auto',
+    resolution: '720p',
+  };
+  await ctx.reply(
+    `🔄 **ĐÃ RESET TOÀN BỘ TRẠNG THÁI BOT!**\n\n` +
+    `• Model: \`${currentModel}\`\n` +
+    `• Tỉ lệ: \`${currentSettings.ratio}\`\n` +
+    `• Thời lượng: \`Tự động theo video mẫu (Math.ceil)\`\n` +
+    `• Giỏ hàng: Đã làm trống\n\n` +
+    `👉 Sếp có thể gửi lại /caidat hoặc gửi mẻ ảnh & video mới để test nhé!`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
 // Lệnh /start
