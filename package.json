@@ -10,6 +10,7 @@
     "postinstall": "npm run build",
     "preview": "vite preview",
     "start": "node index.js",
+    "bot": "node bot.js",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "vite build && electron-builder --win"
   },
@@ -27,7 +28,9 @@
   "license": "ISC",
   "dependencies": {
     "@vitejs/plugin-react": "^6.1.1",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "grammy": "^1.46.0",
     "http-proxy-middleware": "^4.2.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
