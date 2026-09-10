@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Bot, InlineKeyboard } from 'grammy';
 import { sessionManager } from './lib/botSession.js';
-import { executeVideoScene, uploadTelegramFile } from './lib/botEngine.js';
+import { executeVideoScene, uploadTelegramFile, getProjectsList } from './lib/botEngine.js';
 import { buildPairs } from './lib/engine.js';
 import { DEFAULT_PROMPT, DEFAULT_MODEL_ID } from './data/config.js';
 
@@ -34,6 +34,22 @@ bot.use(async (ctx, next) => {
   }
   return next();
 });
+
+let currentProject = {
+  id: process.env.DEFAULT_PROJECT_ID || 'default',
+  name: 'Mặc định',
+};
+
+export function getProjectLabel() {
+  return currentProject.name || currentProject.id || 'Mặc định';
+}
+
+getProjectsList()
+  .then((projects) => {
+    const found = projects.find((p) => p.id === currentProject.id || p.id_base === currentProject.id);
+    if (found) currentProject = { id: found.id, name: found.name };
+  })
+  .catch(() => {});
 
 let currentPrompt = DEFAULT_PROMPT;
 let currentModel = DEFAULT_MODEL_ID;
@@ -178,7 +194,8 @@ bot.command('start', async (ctx) => {
     `5. Gõ **/chay** để bắt đầu render ngầm ${concurrencyLimit} luồng!\n\n` +
     `⚡ **Các lệnh điều khiển:**\n` +
     `• /xem - Xem tình trạng mẻ file hiện tại\n` +
-    `• /caidat - Đổi Tỉ lệ / Thời lượng / Bật tắt Random & Khóa 1 lần\n` +
+    `• /caidat - Đổi Tỉ lệ / Phân giải / Mode / Bật tắt Random & Khóa 1 lần\n` +
+    `• /duan - Xem và chọn Dự án lưu video (79AI Projects)\n` +
     `• /model - Xem và chọn Model AI (WAN 3.0, Seedance 2.0 Omni...)\n` +
     `• /prompt - Xem hoặc đổi Prompt tạo video\n` +
     `• /status - Xem tiến độ render\n` +
@@ -250,6 +267,7 @@ function formatDurationLabel(dur) {
 function formatCaidatText() {
   return (
     `⚙️ **CẤU HÌNH MODEL & THÔNG SỐ RENDER:**\n\n` +
+    `• **Dự án (Project):** \`${getProjectLabel()}\` (\`${currentProject.id}\`)\n` +
     `• **Model AI:** \`${getModelName(currentModel)}\` (\`${currentModel}\`)\n` +
     `• **Tỉ lệ khung hình:** \`${currentSettings.ratio}\`\n` +
     `• **Độ phân giải:** \`${currentSettings.resolution}\`\n` +
@@ -265,13 +283,15 @@ function formatCaidatText() {
     (sessionManager.session.usedFashion.length > 0 || sessionManager.session.usedVideo.length > 0
       ? `• Đã khóa: ${sessionManager.session.usedFashion.length} outfit, ${sessionManager.session.usedVideo.length} video\n`
       : '') +
-    `\n👉 Bấm các nút bên dưới để đổi thiết lập hoặc chọn Model:`
+    `\n👉 Bấm các nút bên dưới để đổi thiết lập:`
   );
 }
 
 function buildCaidatKeyboard() {
   const modeLabel = getModeName(currentModel, currentSettings.mode);
   return new InlineKeyboard()
+    .text(`📁 Dự án: ${getProjectLabel()}`, 'menu:projects')
+    .row()
     .text(`🤖 Model: ${getModelName(currentModel)}`, 'menu:model')
     .row()
     .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
@@ -286,6 +306,55 @@ function buildCaidatKeyboard() {
     .text(`🔒 Outfit 1 lần: ${runSettings.fashionOnce ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:once_fashion')
     .text(`🔒 Video 1 lần: ${runSettings.videoOnce ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:once_video');
 }
+
+async function formatProjectsText() {
+  return (
+    `📁 **DANH SÁCH DỰ ÁN (PROJECT) TRÊN 79AI:**\n\n` +
+    `• **Dự án đang chọn:** \`${getProjectLabel()}\` (ID: \`${currentProject.id}\`)\n\n` +
+    `👉 Bấm chọn dự án Sếp muốn lưu video vào:`
+  );
+}
+
+async function buildProjectsKeyboard(forceRefresh = false) {
+  const projects = await getProjectsList(forceRefresh);
+  const kb = new InlineKeyboard();
+  for (const p of projects) {
+    const isSelected = p.id === currentProject.id || p.id_base === currentProject.id;
+    kb.text(`${isSelected ? '✅ ' : ''}${p.name}`, `set_project:${p.id}`).row();
+  }
+  kb.text('🔄 Làm mới danh sách', 'refresh:projects');
+  kb.text('🔙 Quay lại Cài đặt', 'menu:caidat');
+  return kb;
+}
+
+// Lệnh /duan hoặc /project - Xem và chọn Dự án lưu video
+bot.command(['duan', 'project'], async (ctx) => {
+  const arg = ctx.match?.trim();
+  if (arg) {
+    const projects = await getProjectsList();
+    const found = projects.find(
+      (p) => p.id === arg || p.id_base === arg || p.name.toLowerCase().includes(arg.toLowerCase())
+    );
+    if (found) {
+      currentProject = { id: found.id, name: found.name };
+      return ctx.reply(`✅ **Đã chuyển sang Dự án:** \`${found.name}\` (ID: \`${found.id}\`)`, {
+        parse_mode: 'Markdown',
+      });
+    } else {
+      currentProject = { id: arg, name: arg };
+      return ctx.reply(`✅ **Đã chuyển sang Dự án ID:** \`${currentProject.id}\``, {
+        parse_mode: 'Markdown',
+      });
+    }
+  }
+
+  const text = await formatProjectsText();
+  const kb = await buildProjectsKeyboard();
+  await ctx.reply(text, {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+});
 
 function formatModelSelectText() {
   return (
@@ -314,11 +383,13 @@ bot.command('model', async (ctx) => {
     );
     if (found) {
       currentModel = found.id;
+      ensureModelSettingsValid();
       return ctx.reply(`✅ **Đã chuyển sang Model:** \`${found.name}\` (\`${found.id}\`)`, {
         parse_mode: 'Markdown',
       });
     } else {
       currentModel = arg;
+      ensureModelSettingsValid();
       return ctx.reply(`✅ **Đã chuyển sang Model tùy chỉnh:** \`${currentModel}\``, {
         parse_mode: 'Markdown',
       });
@@ -433,13 +504,83 @@ bot.command(['chay', 'run'], async (ctx) => {
   sessionManager.session.status = 'running';
   sessionManager.session.startedAt = Date.now();
 
-  await ctx.reply(
-    `🚀 **Bắt đầu xử lý mẻ ${pairs.length} video (${concurrencyLimit} luồng song song)...**\n\n` +
-    `• Random: Outfit [${runSettings.randomFashion ? '✅ BẬT' : '❌ TẮT'}] | Video [${runSettings.randomVideo ? '✅ BẬT' : '❌ TẮT'}]\n` +
-    `• Khóa 1 lần: Outfit [${runSettings.fashionOnce ? '✅ BẬT' : '❌ TẮT'}] | Video [${runSettings.videoOnce ? '✅ BẬT' : '❌ TẮT'}]\n\n` +
-    `☕ Sếp cứ nghỉ ngơi, khi có video render xong Bot sẽ gửi về kèm nút duyệt ngay!`,
+  const pairStatus = pairs.map((p, i) => ({
+    index: i + 1,
+    status: 'pending',
+    percent: 0,
+    message: 'Chờ luồng...',
+  }));
+
+  function renderProgressBar(percent) {
+    const totalBars = 10;
+    const filled = Math.min(totalBars, Math.max(0, Math.round((percent / 100) * totalBars)));
+    const empty = totalBars - filled;
+    return '█'.repeat(filled) + '░'.repeat(empty);
+  }
+
+  const dashboardMsg = await ctx.reply(
+    `🚀 **KHỞI ĐỘNG MẺ RENDER (${pairs.length} video - ${concurrencyLimit} luồng)**\n\n` +
+    `📁 Dự án: \`${getProjectLabel()}\` (ID: \`${currentProject.id}\`)\n` +
+    `🤖 Model: \`${getModelName(currentModel)}\` | 📺 ${currentSettings.resolution} | ⚡ ${getModeName(currentModel, currentSettings.mode)}\n` +
+    `🎲 Random: Outfit [${runSettings.randomFashion ? '✅' : '❌'}] | Video [${runSettings.randomVideo ? '✅' : '❌'}]\n` +
+    `🔒 Khóa 1 lần: Outfit [${runSettings.fashionOnce ? '✅' : '❌'}] | Video [${runSettings.videoOnce ? '✅' : '❌'}]\n\n` +
+    `⏳ Đang chuẩn bị tải tài nguyên lên máy chủ...`,
     { parse_mode: 'Markdown' }
   );
+
+  let lastEditTime = 0;
+  let editScheduled = false;
+
+  async function updateDashboard(force = false) {
+    const now = Date.now();
+    if (!force && now - lastEditTime < 3000) {
+      if (!editScheduled) {
+        editScheduled = true;
+        setTimeout(() => {
+          editScheduled = false;
+          updateDashboard(false);
+        }, 3000 - (now - lastEditTime));
+      }
+      return;
+    }
+    lastEditTime = now;
+
+    let text =
+      `🚀 **TIẾN ĐỘ RENDER MẺ (${pairs.length} video - ${concurrencyLimit} luồng)**\n\n` +
+      `📁 Dự án: \`${getProjectLabel()}\` | 🤖 Model: \`${getModelName(currentModel)}\`\n` +
+      `📺 Phân giải: \`${currentSettings.resolution}\` | ⚡ Mode: \`${getModeName(currentModel, currentSettings.mode)}\`\n` +
+      `📊 **Tiến độ tổng:** ${doneCount}/${pairs.length} hoàn tất ${errorCount > 0 ? `(⚠️ ${errorCount} lỗi)` : ''}\n` +
+      `─────────────────────────\n`;
+
+    const displayList = pairStatus.slice(0, 8);
+    for (const item of displayList) {
+      if (item.status === 'done') {
+        text += `• Video #${item.index}: ✅ **Hoàn tất**\n`;
+      } else if (item.status === 'error') {
+        text += `• Video #${item.index}: ❌ **Lỗi:** ${item.message}\n`;
+      } else if (item.status === 'rendering') {
+        text += `• Video #${item.index}: [${renderProgressBar(item.percent)}] **${item.percent}%**\n`;
+      } else if (item.status === 'uploading') {
+        text += `• Video #${item.index}: 📤 Đang tải file lên server...\n`;
+      } else {
+        text += `• Video #${item.index}: ⏳ Đang chờ lượt...\n`;
+      }
+    }
+
+    if (pairs.length > 8) {
+      text += `• ... và ${pairs.length - 8} video khác đang xếp hàng\n`;
+    }
+
+    text += `\n☕ Video render xong sẽ được gửi ngay bên dưới kèm nút duyệt!`;
+
+    try {
+      await bot.api.editMessageText(ctx.chat.id, dashboardMsg.message_id, text, {
+        parse_mode: 'Markdown',
+      });
+    } catch (e) {
+      // Bỏ qua lỗi rate limit
+    }
+  }
 
   // Map cache direct URLs để không tải trùng nhiều lần
   const directUrlCache = new Map();
@@ -484,8 +625,15 @@ bot.command(['chay', 'run'], async (ctx) => {
           sessionManager.session.usedVideo.push(pair.video.fileId);
         }
 
+        pairStatus[idx].status = 'uploading';
+        updateDashboard();
+
         const fashionDirectUrl = await getDirectUrl(pair.fashion.fileId, pair.fashion.name || 'fashion.jpg');
         const vidDirectUrl = await getDirectUrl(pair.video.fileId, pair.video.name || 'clip.mp4');
+
+        pairStatus[idx].status = 'rendering';
+        pairStatus[idx].percent = 5;
+        updateDashboard();
 
         const out = await executeVideoScene({
           characterUrl: charDirectUrl,
@@ -496,9 +644,20 @@ bot.command(['chay', 'run'], async (ctx) => {
           settings: currentSettings,
           prompt: currentPrompt,
           timeoutSeconds: timeoutSec,
+          projectId: currentProject.id,
+          onUpdate: (up) => {
+            if (typeof up.percent === 'number' && up.percent > 0) {
+              pairStatus[idx].percent = Math.max(pairStatus[idx].percent, up.percent);
+            }
+            updateDashboard();
+          },
         });
 
         doneCount += 1;
+        pairStatus[idx].status = 'done';
+        pairStatus[idx].percent = 100;
+        updateDashboard(true);
+
         qcStore.set(sceneId, {
           url: out.url,
           index: idx + 1,
@@ -521,6 +680,9 @@ bot.command(['chay', 'run'], async (ctx) => {
         });
       } catch (e) {
         errorCount += 1;
+        pairStatus[idx].status = 'error';
+        pairStatus[idx].message = e.message || 'Lỗi';
+        updateDashboard(true);
         console.error(`[Worker ${workerId}] Lỗi video #${idx + 1}:`, e);
         await bot.api.sendMessage(ctx.chat.id, `⚠️ **Video #${idx + 1} lỗi:** ${e.message}`);
       }
@@ -530,9 +692,11 @@ bot.command(['chay', 'run'], async (ctx) => {
   const activeWorkers = Math.min(concurrencyLimit, pairs.length);
   Promise.all(Array.from({ length: activeWorkers }).map((_, wId) => runWorker(wId + 1))).then(async () => {
     sessionManager.session.status = 'idle';
+    await updateDashboard(true);
     await bot.api.sendMessage(
       ctx.chat.id,
       `🎉 **ĐÃ HOÀN TẤT TOÀN BỘ MẺ RENDER!**\n\n` +
+      `📁 Dự án: \`${getProjectLabel()}\`\n` +
       `• Tổng số: ${pairs.length} video\n` +
       `• Thành công: ${doneCount}\n` +
       `• Lỗi: ${errorCount}\n\n` +
@@ -573,6 +737,7 @@ bot.callbackQuery(/^qc:(pass|retry|skip):(.+)$/, async (ctx) => {
       settings: currentSettings,
       prompt: currentPrompt,
       timeoutSeconds: timeoutSec,
+      projectId: currentProject.id,
     }).then(async (out) => {
       const newKeyboard = new InlineKeyboard()
         .text('✅ Duyệt', `qc:pass:${sceneId}`)
@@ -602,6 +767,46 @@ bot.callbackQuery('menu:model', async (ctx) => {
   await ctx.editMessageText(formatModelSelectText(), {
     parse_mode: 'Markdown',
     reply_markup: buildModelSelectKeyboard(),
+  });
+});
+
+// Chuyển sang menu chọn dự án
+bot.callbackQuery('menu:projects', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const text = await formatProjectsText();
+  const kb = await buildProjectsKeyboard();
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+});
+
+// Làm mới danh sách dự án
+bot.callbackQuery('refresh:projects', async (ctx) => {
+  await ctx.answerCallbackQuery({ text: '🔄 Đang làm mới danh sách...' });
+  const text = await formatProjectsText();
+  const kb = await buildProjectsKeyboard(true);
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
+  });
+});
+
+// Chọn dự án trực tiếp
+bot.callbackQuery(/^set_project:(.+)$/, async (ctx) => {
+  const selectedId = ctx.match[1];
+  const projects = await getProjectsList();
+  const found = projects.find((p) => p.id === selectedId || p.id_base === selectedId);
+  currentProject = {
+    id: selectedId,
+    name: found ? found.name : selectedId,
+  };
+  await ctx.answerCallbackQuery({ text: `✅ Đã chọn dự án: ${currentProject.name}!` });
+  const text = await formatProjectsText();
+  const kb = await buildProjectsKeyboard();
+  await ctx.editMessageText(text, {
+    parse_mode: 'Markdown',
+    reply_markup: kb,
   });
 });
 
