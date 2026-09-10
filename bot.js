@@ -472,6 +472,9 @@ bot.on(':photo', async (ctx) => {
     const count = sessionManager.session.fashions.length;
     await ctx.reply(`✅ **Đã nhận ẢNH TRANG PHỤC #${count}** (Tổng: ${count} outfit)`, { parse_mode: 'Markdown' });
   }
+
+  // Chuyển tiếp tới các handler khác nếu có lệnh (vd: ảnh kèm caption /chay)
+  return next();
 });
 
 // Xử lý khi nhận video hoặc file đính kèm
@@ -497,6 +500,9 @@ bot.on([':video', ':document'], async (ctx) => {
     const count = sessionManager.session.videos.length;
     await ctx.reply(`🎬 Đã nhận Video mẫu #${count} (Tổng: ${count} video)`);
   }
+
+  // Chuyển tiếp nếu có caption là lệnh
+  return next();
 });
 
 // Bộ nhớ kết quả để hỗ trợ nút QC duyệt
@@ -908,8 +914,20 @@ bot.callbackQuery(/^toggle:(ratio|duration|resolution|mode|model|rnd_fashion|rnd
   });
 });
 
-// Khởi động bot
+// Khởi động bot và cài đặt danh sách lệnh (menu)
 console.info('🚀 Đang khởi động Telegram Assistant Bot...');
+bot.api.setMyCommands([
+  { command: 'chay', description: '🚀 Bắt đầu render mẻ video' },
+  { command: 'caidat', description: '⚙️ Cài đặt model, tỉ lệ, chế độ, dự án...' },
+  { command: 'xem', description: '📋 Kiểm tra file đã nạp' },
+  { command: 'status', description: '📊 Xem trạng thái và tiến độ' },
+  { command: 'duan', description: '📁 Chọn dự án 79AI' },
+  { command: 'thuvien', description: '🔍 Xem thư viện video của dự án' },
+  { command: 'huy', description: '🗑️ Hủy mẻ hiện tại' },
+  { command: 'start', description: '📖 Hướng dẫn sử dụng' }
+]).catch(e => console.warn('Không thể cài đặt menu lệnh:', e.message));
+
+
 bot.start({
   onStart: (botInfo) => {
     console.info(`✅ Bot @${botInfo.username} đã sẵn sàng chạy!`);
