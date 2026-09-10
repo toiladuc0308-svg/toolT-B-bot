@@ -62,7 +62,7 @@ let currentPrompt = DEFAULT_PROMPT;
 let currentModel = DEFAULT_MODEL_ID;
 let currentSettings = {
   ratio: '9:16',
-  duration: '5',
+  duration: 'auto', // 'auto' (mặc định theo video ref làm tròn Math.ceil) hoặc '5', '10'
   resolution: '720p',
 };
 
@@ -80,12 +80,18 @@ bot.command('prompt', async (ctx) => {
   );
 });
 
+// Helper format hiển thị thời lượng
+function formatDurationLabel(dur) {
+  if (dur === 'auto') return 'Tự động theo video mẫu (Math.ceil)';
+  return `${dur}s (Cố định)`;
+}
+
 // Lệnh /caidat - Xem và đổi Model / Tỉ lệ
 bot.command('caidat', async (ctx) => {
   const keyboard = new InlineKeyboard()
     .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
     .row()
-    .text(`⏱️ Thời lượng: ${currentSettings.duration}s`, 'toggle:duration')
+    .text(`⏱️ Thời lượng: ${currentSettings.duration === 'auto' ? 'Auto (Theo video ref)' : `${currentSettings.duration}s`}`, 'toggle:duration')
     .row()
     .text(`🤖 Model: ${currentModel}`, 'toggle:model');
 
@@ -93,7 +99,7 @@ bot.command('caidat', async (ctx) => {
     `⚙️ **CẤU HÌNH MODEL & THÔNG SỐ RENDER:**\n\n` +
     `• **Model AI:** \`${currentModel}\`\n` +
     `• **Tỉ lệ khung hình:** \`${currentSettings.ratio}\`\n` +
-    `• **Thời lượng video:** \`${currentSettings.duration}s\`\n` +
+    `• **Thời lượng video:** \`${formatDurationLabel(currentSettings.duration)}\`\n` +
     `• **Độ phân giải:** \`${currentSettings.resolution}\`\n` +
     `• **Số luồng song song:** \`${concurrencyLimit} luồng\`\n\n` +
     `👉 Bấm các nút bên dưới để đổi nhanh thông số:`,
@@ -320,7 +326,9 @@ bot.callbackQuery(/^toggle:(ratio|duration|model)$/, async (ctx) => {
   if (type === 'ratio') {
     currentSettings.ratio = currentSettings.ratio === '9:16' ? '16:9' : '9:16';
   } else if (type === 'duration') {
-    currentSettings.duration = currentSettings.duration === '5' ? '10' : '5';
+    if (currentSettings.duration === 'auto') currentSettings.duration = '5';
+    else if (currentSettings.duration === '5') currentSettings.duration = '10';
+    else currentSettings.duration = 'auto';
   } else if (type === 'model') {
     currentModel = currentModel === 'wan_3_0' ? 'seedance_20_pro_edit' : 'wan_3_0';
   }
@@ -330,7 +338,7 @@ bot.callbackQuery(/^toggle:(ratio|duration|model)$/, async (ctx) => {
   const keyboard = new InlineKeyboard()
     .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
     .row()
-    .text(`⏱️ Thời lượng: ${currentSettings.duration}s`, 'toggle:duration')
+    .text(`⏱️ Thời lượng: ${currentSettings.duration === 'auto' ? 'Auto (Theo video ref)' : `${currentSettings.duration}s`}`, 'toggle:duration')
     .row()
     .text(`🤖 Model: ${currentModel}`, 'toggle:model');
 
@@ -338,7 +346,7 @@ bot.callbackQuery(/^toggle:(ratio|duration|model)$/, async (ctx) => {
     `⚙️ **CẤU HÌNH MODEL & THÔNG SỐ RENDER:**\n\n` +
     `• **Model AI:** \`${currentModel}\`\n` +
     `• **Tỉ lệ khung hình:** \`${currentSettings.ratio}\`\n` +
-    `• **Thời lượng video:** \`${currentSettings.duration}s\`\n` +
+    `• **Thời lượng video:** \`${formatDurationLabel(currentSettings.duration)}\`\n` +
     `• **Độ phân giải:** \`${currentSettings.resolution}\`\n` +
     `• **Số luồng song song:** \`${concurrencyLimit} luồng\`\n\n` +
     `👉 Bấm các nút bên dưới để đổi nhanh thông số:`,
