@@ -132,11 +132,20 @@ bot.on([':video', ':document'], async (ctx) => {
   const vid = ctx.message.video;
 
   if (vid) {
-    sessionManager.addVideo({ fileId: vid.file_id, name: vid.file_name || `ref_${Date.now()}.mp4` });
+    const sec = Number(vid.duration) || 0;
+    sessionManager.addVideo({
+      fileId: vid.file_id,
+      name: vid.file_name || `ref_${Date.now()}.mp4`,
+      seconds: sec,
+    });
     const count = sessionManager.session.videos.length;
-    await ctx.reply(`🎬 Đã nhận Video mẫu #${count} (Tổng: ${count} video)`);
+    await ctx.reply(`🎬 Đã nhận Video mẫu #${count} (${sec > 0 ? `${sec}s` : 'chưa rõ s'} | Tổng: ${count} video)`);
   } else if (doc && (doc.mime_type?.startsWith('video/') || doc.file_name?.endsWith('.mp4'))) {
-    sessionManager.addVideo({ fileId: doc.file_id, name: doc.file_name || `ref_${Date.now()}.mp4` });
+    sessionManager.addVideo({
+      fileId: doc.file_id,
+      name: doc.file_name || `ref_${Date.now()}.mp4`,
+      seconds: 0,
+    });
     const count = sessionManager.session.videos.length;
     await ctx.reply(`🎬 Đã nhận Video mẫu #${count} (Tổng: ${count} video)`);
   }
@@ -191,7 +200,7 @@ bot.command(['chay', 'run'], async (ctx) => {
       const sceneId = `sc_${Date.now()}_${idx + 1}`;
 
       try {
-        console.info(`[Worker ${workerId}] Đang xử lý video #${idx + 1}/${videoList.length}`);
+        console.info(`[Worker ${workerId}] Đang xử lý video #${idx + 1}/${videoList.length} (ref: ${vidItem.seconds || 0}s)`);
         const vidFile = await bot.api.getFile(vidItem.fileId);
         const vidTeleUrl = `https://api.telegram.org/file/bot${token}/${vidFile.file_path}`;
         const vidDirectUrl = await uploadTelegramFile(vidTeleUrl, vidItem.name || 'clip.mp4');
@@ -200,6 +209,7 @@ bot.command(['chay', 'run'], async (ctx) => {
           characterUrl: charDirectUrl,
           fashionUrl: fashionDirectUrl,
           videoUrl: vidDirectUrl,
+          refSeconds: vidItem.seconds || 0,
           modelId: currentModel,
           settings: currentSettings,
           prompt: currentPrompt,
@@ -213,6 +223,7 @@ bot.command(['chay', 'run'], async (ctx) => {
           charDirectUrl,
           fashionDirectUrl,
           vidDirectUrl,
+          refSeconds: vidItem.seconds || 0,
         });
 
         // Tạo bàn phím duyệt QC
@@ -275,6 +286,7 @@ bot.callbackQuery(/^qc:(pass|retry|skip):(.+)$/, async (ctx) => {
       characterUrl: item.charDirectUrl,
       fashionUrl: item.fashionDirectUrl,
       videoUrl: item.vidDirectUrl,
+      refSeconds: item.refSeconds || 0,
       modelId: currentModel,
       settings: currentSettings,
       prompt: currentPrompt,
