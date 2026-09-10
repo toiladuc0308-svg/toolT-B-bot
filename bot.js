@@ -480,27 +480,48 @@ bot.on(':photo', async (ctx, next) => {
   return next();
 });
 
-// Xử lý khi user reply ảnh với lệnh /mat, /outfit
+// Xử lý khi user reply ảnh hoặc video với lệnh /mat, /outfit, /video
 bot.on('message:text', async (ctx, next) => {
   const text = ctx.message.text.toLowerCase();
+  const replied = ctx.message.reply_to_message;
   
-  if (ctx.message.reply_to_message && ctx.message.reply_to_message.photo) {
-    const photos = ctx.message.reply_to_message.photo;
-    const fileId = photos[photos.length - 1].file_id;
-    
-    const isFace = text.includes('#mat') || text.includes('/mat') || text.includes('#face') || text.includes('/face');
-    const isOutfit = text.includes('#outfit') || text.includes('/outfit') || text.includes('#do') || text.includes('/do');
+  if (replied) {
+    if (replied.photo) {
+      const photos = replied.photo;
+      const fileId = photos[photos.length - 1].file_id;
+      
+      const isFace = text.includes('#mat') || text.includes('/mat') || text.includes('#face') || text.includes('/face');
+      const isOutfit = text.includes('#outfit') || text.includes('/outfit') || text.includes('#do') || text.includes('/do');
 
-    if (isFace) {
-      sessionManager.setCharacter({ fileId, name: 'character.jpg' });
-      await ctx.reply('✅ **Đã nhận ẢNH KHUÔN MẶT** (Nhân vật) từ tin nhắn trả lời', { parse_mode: 'Markdown' });
-    } else if (isOutfit) {
-      sessionManager.addFashion({ fileId, name: `outfit_${sessionManager.session.fashions.length + 1}.jpg` });
-      const count = sessionManager.session.fashions.length;
-      await ctx.reply(`✅ **Đã nhận ẢNH TRANG PHỤC #${count}** (Tổng: ${count} outfit) từ tin nhắn trả lời`, { parse_mode: 'Markdown' });
+      if (isFace) {
+        sessionManager.setCharacter({ fileId, name: 'character.jpg' });
+        await ctx.reply('✅ **Đã nhận ẢNH KHUÔN MẶT** (Nhân vật) từ tin nhắn trả lời', { parse_mode: 'Markdown' });
+      } else if (isOutfit) {
+        sessionManager.addFashion({ fileId, name: `outfit_${sessionManager.session.fashions.length + 1}.jpg` });
+        const count = sessionManager.session.fashions.length;
+        await ctx.reply(`✅ **Đã nhận ẢNH TRANG PHỤC #${count}** (Tổng: ${count} outfit) từ tin nhắn trả lời`, { parse_mode: 'Markdown' });
+      }
+    } else if (replied.video || (replied.document && (replied.document.mime_type?.startsWith('video/') || replied.document.file_name?.endsWith('.mp4')))) {
+      const isVideoCmd = text.includes('#video') || text.includes('/video') || text.includes('#vid') || text.includes('/vid');
+      
+      if (isVideoCmd) {
+        const doc = replied.document;
+        const vid = replied.video;
+        
+        if (vid) {
+          const sec = Number(vid.duration) || 0;
+          sessionManager.addVideo({ fileId: vid.file_id, name: vid.file_name || `ref_${Date.now()}.mp4`, seconds: sec });
+          const count = sessionManager.session.videos.length;
+          await ctx.reply(`🎬 Đã nhận Video mẫu #${count} (${sec > 0 ? `${sec}s` : 'chưa rõ s'}) từ tin nhắn trả lời`, { parse_mode: 'Markdown' });
+        } else if (doc) {
+          sessionManager.addVideo({ fileId: doc.file_id, name: doc.file_name || `ref_${Date.now()}.mp4`, seconds: 0 });
+          const count = sessionManager.session.videos.length;
+          await ctx.reply(`🎬 Đã nhận Video mẫu #${count} từ tin nhắn trả lời`, { parse_mode: 'Markdown' });
+        }
+      }
     }
-  } else if (text === '/mat' || text === '/outfit') {
-    await ctx.reply('⚠️ Sếp hãy gửi ảnh kèm caption lệnh, hoặc Reply (trả lời) một bức ảnh và gõ lệnh nhé!');
+  } else if (text === '/mat' || text === '/outfit' || text === '/video') {
+    await ctx.reply('⚠️ Sếp hãy gửi file kèm caption lệnh, hoặc Reply (trả lời) file đó và gõ lệnh tương ứng nhé!');
   }
 
   return next();
