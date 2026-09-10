@@ -43,6 +43,19 @@ let currentSettings = {
   resolution: '720p',
 };
 
+export const SUPPORTED_MODELS = [
+  { id: 'wan_3_0', name: 'WAN 3.0 (Mặc định)' },
+  { id: 'seedance_20_pro_edit', name: 'Seedance 2.0 Omni' },
+  { id: 'seedance_25_omni', name: 'Seedance 2.5' },
+  { id: 'veo_omni_edit', name: 'VEO Omni Edit' },
+  { id: 'kling-o3-edit', name: 'Kling 3.0 Edit' },
+];
+
+export function getModelName(id) {
+  const m = SUPPORTED_MODELS.find((x) => x.id === id);
+  return m ? m.name : id;
+}
+
 let runSettings = {
   randomFashion: false,
   randomVideo: false,
@@ -92,6 +105,7 @@ bot.command('start', async (ctx) => {
     `⚡ **Các lệnh điều khiển:**\n` +
     `• /xem - Xem tình trạng mẻ file hiện tại\n` +
     `• /caidat - Đổi Tỉ lệ / Thời lượng / Bật tắt Random & Khóa 1 lần\n` +
+    `• /model - Xem và chọn Model AI (WAN 3.0, Seedance 2.0 Omni...)\n` +
     `• /prompt - Xem hoặc đổi Prompt tạo video\n` +
     `• /status - Xem tiến độ render\n` +
     `• /chay - Bắt đầu render mẻ\n` +
@@ -162,7 +176,7 @@ function formatDurationLabel(dur) {
 function formatCaidatText() {
   return (
     `⚙️ **CẤU HÌNH MODEL & THÔNG SỐ RENDER:**\n\n` +
-    `• **Model AI:** \`${currentModel}\`\n` +
+    `• **Model AI:** \`${getModelName(currentModel)}\` (\`${currentModel}\`)\n` +
     `• **Tỉ lệ khung hình:** \`${currentSettings.ratio}\`\n` +
     `• **Thời lượng video:** \`${formatDurationLabel(currentSettings.duration)}\`\n` +
     `• **Số luồng song song:** \`${concurrencyLimit} luồng\`\n\n` +
@@ -175,12 +189,14 @@ function formatCaidatText() {
     (sessionManager.session.usedFashion.length > 0 || sessionManager.session.usedVideo.length > 0
       ? `• Đã khóa: ${sessionManager.session.usedFashion.length} outfit, ${sessionManager.session.usedVideo.length} video\n`
       : '') +
-    `\n👉 Bấm các nút bên dưới để bật/tắt thiết lập:`
+    `\n👉 Bấm các nút bên dưới để đổi thiết lập hoặc chọn Model:`
   );
 }
 
 function buildCaidatKeyboard() {
   return new InlineKeyboard()
+    .text(`🤖 Model: ${getModelName(currentModel)}`, 'menu:model')
+    .row()
     .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
     .text(`⏱️ ${currentSettings.duration === 'auto' ? 'Auto (Ref)' : `${currentSettings.duration}s`}`, 'toggle:duration')
     .row()
@@ -190,6 +206,50 @@ function buildCaidatKeyboard() {
     .text(`🔒 Outfit 1 lần: ${runSettings.fashionOnce ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:once_fashion')
     .text(`🔒 Video 1 lần: ${runSettings.videoOnce ? '✅ BẬT' : '❌ TẮT'}`, 'toggle:once_video');
 }
+
+function formatModelSelectText() {
+  return (
+    `🤖 **DANH SÁCH MODEL AI TẠO VIDEO (79AI):**\n\n` +
+    `• **Model đang chọn:** \`${getModelName(currentModel)}\` (\`${currentModel}\`)\n\n` +
+    `👉 Bấm nút bên dưới để chọn model Sếp muốn render:`
+  );
+}
+
+function buildModelSelectKeyboard() {
+  const kb = new InlineKeyboard();
+  for (const m of SUPPORTED_MODELS) {
+    const isSelected = m.id === currentModel;
+    kb.text(`${isSelected ? '✅ ' : ''}${m.name}`, `set_model:${m.id}`).row();
+  }
+  kb.text('🔙 Quay lại Cài đặt', 'menu:caidat');
+  return kb;
+}
+
+// Lệnh /model - Xem và chọn Model AI
+bot.command('model', async (ctx) => {
+  const arg = ctx.match?.trim();
+  if (arg) {
+    const found = SUPPORTED_MODELS.find(
+      (m) => m.id === arg || m.name.toLowerCase().includes(arg.toLowerCase())
+    );
+    if (found) {
+      currentModel = found.id;
+      return ctx.reply(`✅ **Đã chuyển sang Model:** \`${found.name}\` (\`${found.id}\`)`, {
+        parse_mode: 'Markdown',
+      });
+    } else {
+      currentModel = arg;
+      return ctx.reply(`✅ **Đã chuyển sang Model tùy chỉnh:** \`${currentModel}\``, {
+        parse_mode: 'Markdown',
+      });
+    }
+  }
+
+  await ctx.reply(formatModelSelectText(), {
+    parse_mode: 'Markdown',
+    reply_markup: buildModelSelectKeyboard(),
+  });
+});
 
 // Lệnh /caidat - Xem và đổi Model / Tỉ lệ / Random / 1 Lần
 bot.command('caidat', async (ctx) => {
@@ -454,6 +514,35 @@ bot.callbackQuery(/^qc:(pass|retry|skip):(.+)$/, async (ctx) => {
       parse_mode: 'Markdown',
     });
   }
+});
+
+// Chuyển sang menu chọn model
+bot.callbackQuery('menu:model', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText(formatModelSelectText(), {
+    parse_mode: 'Markdown',
+    reply_markup: buildModelSelectKeyboard(),
+  });
+});
+
+// Quay lại bảng cài đặt chính
+bot.callbackQuery('menu:caidat', async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText(formatCaidatText(), {
+    parse_mode: 'Markdown',
+    reply_markup: buildCaidatKeyboard(),
+  });
+});
+
+// Chọn model trực tiếp từ danh sách
+bot.callbackQuery(/^set_model:(.+)$/, async (ctx) => {
+  const selectedId = ctx.match[1];
+  currentModel = selectedId;
+  await ctx.answerCallbackQuery({ text: `✅ Đã chọn ${getModelName(selectedId)}!` });
+  await ctx.editMessageText(formatModelSelectText(), {
+    parse_mode: 'Markdown',
+    reply_markup: buildModelSelectKeyboard(),
+  });
 });
 
 // Xử lý nút bấm cài đặt (/caidat)
