@@ -458,13 +458,16 @@ bot.command('huy', async (ctx) => {
 });
 
 // Xử lý khi nhận ảnh
-bot.on(':photo', async (ctx) => {
+bot.on(':photo', async (ctx, next) => {
   const photos = ctx.message.photo;
   const highestPhoto = photos[photos.length - 1];
   const fileId = highestPhoto.file_id;
   const caption = (ctx.message.caption || '').toLowerCase();
 
-  if (caption.includes('#mat') || caption.includes('#face') || (!sessionManager.session.character && !caption.includes('#outfit') && !caption.includes('#do'))) {
+  const isFace = caption.includes('#mat') || caption.includes('/mat') || caption.includes('#face') || caption.includes('/face');
+  const isOutfit = caption.includes('#outfit') || caption.includes('/outfit') || caption.includes('#do') || caption.includes('/do');
+
+  if (isFace || (!sessionManager.session.character && !isOutfit)) {
     sessionManager.setCharacter({ fileId, name: 'character.jpg' });
     await ctx.reply('✅ **Đã nhận ẢNH KHUÔN MẶT** (Nhân vật)', { parse_mode: 'Markdown' });
   } else {
@@ -477,8 +480,34 @@ bot.on(':photo', async (ctx) => {
   return next();
 });
 
+// Xử lý khi user reply ảnh với lệnh /mat, /outfit
+bot.on('message:text', async (ctx, next) => {
+  const text = ctx.message.text.toLowerCase();
+  
+  if (ctx.message.reply_to_message && ctx.message.reply_to_message.photo) {
+    const photos = ctx.message.reply_to_message.photo;
+    const fileId = photos[photos.length - 1].file_id;
+    
+    const isFace = text.includes('#mat') || text.includes('/mat') || text.includes('#face') || text.includes('/face');
+    const isOutfit = text.includes('#outfit') || text.includes('/outfit') || text.includes('#do') || text.includes('/do');
+
+    if (isFace) {
+      sessionManager.setCharacter({ fileId, name: 'character.jpg' });
+      await ctx.reply('✅ **Đã nhận ẢNH KHUÔN MẶT** (Nhân vật) từ tin nhắn trả lời', { parse_mode: 'Markdown' });
+    } else if (isOutfit) {
+      sessionManager.addFashion({ fileId, name: `outfit_${sessionManager.session.fashions.length + 1}.jpg` });
+      const count = sessionManager.session.fashions.length;
+      await ctx.reply(`✅ **Đã nhận ẢNH TRANG PHỤC #${count}** (Tổng: ${count} outfit) từ tin nhắn trả lời`, { parse_mode: 'Markdown' });
+    }
+  } else if (text === '/mat' || text === '/outfit') {
+    await ctx.reply('⚠️ Sếp hãy gửi ảnh kèm caption lệnh, hoặc Reply (trả lời) một bức ảnh và gõ lệnh nhé!');
+  }
+
+  return next();
+});
+
 // Xử lý khi nhận video hoặc file đính kèm
-bot.on([':video', ':document'], async (ctx) => {
+bot.on([':video', ':document'], async (ctx, next) => {
   const doc = ctx.message.document;
   const vid = ctx.message.video;
 
