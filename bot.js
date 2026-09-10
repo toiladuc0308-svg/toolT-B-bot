@@ -56,6 +56,51 @@ bot.command('xem', async (ctx) => {
   await ctx.reply(txt, { parse_mode: 'Markdown' });
 });
 
+import { DEFAULT_PROMPT, DEFAULT_MODEL_ID } from './data/config.js';
+
+let currentPrompt = DEFAULT_PROMPT;
+let currentModel = DEFAULT_MODEL_ID;
+let currentSettings = {
+  ratio: '9:16',
+  duration: '5',
+  resolution: '720p',
+};
+
+// Lệnh /prompt - Xem hoặc đổi Prompt
+bot.command('prompt', async (ctx) => {
+  const newPrompt = ctx.match?.trim();
+  if (newPrompt) {
+    currentPrompt = newPrompt;
+    return ctx.reply(`✅ **Đã cập nhật Prompt mới:**\n\n\`${currentPrompt}\``, { parse_mode: 'Markdown' });
+  }
+  await ctx.reply(
+    `📝 **CẤU HÌNH PROMPT HIỆN TẠI:**\n\n\`\`\`\n${currentPrompt}\n\`\`\`\n\n` +
+    `👉 Để đổi prompt khác, Sếp gõ:\n\`/prompt <nội dung prompt mới>\``,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+// Lệnh /caidat - Xem và đổi Model / Tỉ lệ
+bot.command('caidat', async (ctx) => {
+  const keyboard = new InlineKeyboard()
+    .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
+    .row()
+    .text(`⏱️ Thời lượng: ${currentSettings.duration}s`, 'toggle:duration')
+    .row()
+    .text(`🤖 Model: ${currentModel}`, 'toggle:model');
+
+  await ctx.reply(
+    `⚙️ **CẤU HÌNH MODEL & THÔNG SỐ RENDER:**\n\n` +
+    `• **Model AI:** \`${currentModel}\`\n` +
+    `• **Tỉ lệ khung hình:** \`${currentSettings.ratio}\`\n` +
+    `• **Thời lượng video:** \`${currentSettings.duration}s\`\n` +
+    `• **Độ phân giải:** \`${currentSettings.resolution}\`\n` +
+    `• **Số luồng song song:** \`${concurrencyLimit} luồng\`\n\n` +
+    `👉 Bấm các nút bên dưới để đổi nhanh thông số:`,
+    { parse_mode: 'Markdown', reply_markup: keyboard }
+  );
+});
+
 // Lệnh /huy
 bot.command('huy', async (ctx) => {
   sessionManager.reset();
@@ -155,6 +200,9 @@ bot.command(['chay', 'run'], async (ctx) => {
           characterUrl: charDirectUrl,
           fashionUrl: fashionDirectUrl,
           videoUrl: vidDirectUrl,
+          modelId: currentModel,
+          settings: currentSettings,
+          prompt: currentPrompt,
           timeoutSeconds: timeoutSec,
         });
 
@@ -227,6 +275,9 @@ bot.callbackQuery(/^qc:(pass|retry|skip):(.+)$/, async (ctx) => {
       characterUrl: item.charDirectUrl,
       fashionUrl: item.fashionDirectUrl,
       videoUrl: item.vidDirectUrl,
+      modelId: currentModel,
+      settings: currentSettings,
+      prompt: currentPrompt,
       timeoutSeconds: timeoutSec,
     }).then(async (out) => {
       const newKeyboard = new InlineKeyboard()
@@ -249,6 +300,38 @@ bot.callbackQuery(/^qc:(pass|retry|skip):(.+)$/, async (ctx) => {
       parse_mode: 'Markdown',
     });
   }
+});
+
+// Xử lý nút bấm cài đặt (/caidat)
+bot.callbackQuery(/^toggle:(ratio|duration|model)$/, async (ctx) => {
+  const type = ctx.match[1];
+  if (type === 'ratio') {
+    currentSettings.ratio = currentSettings.ratio === '9:16' ? '16:9' : '9:16';
+  } else if (type === 'duration') {
+    currentSettings.duration = currentSettings.duration === '5' ? '10' : '5';
+  } else if (type === 'model') {
+    currentModel = currentModel === 'seedance_20_pro_edit' ? 'seedance_20_fast' : 'seedance_20_pro_edit';
+  }
+
+  await ctx.answerCallbackQuery({ text: '✅ Đã đổi thiết lập!' });
+
+  const keyboard = new InlineKeyboard()
+    .text(`📐 Tỉ lệ: ${currentSettings.ratio}`, 'toggle:ratio')
+    .row()
+    .text(`⏱️ Thời lượng: ${currentSettings.duration}s`, 'toggle:duration')
+    .row()
+    .text(`🤖 Model: ${currentModel}`, 'toggle:model');
+
+  await ctx.editMessageText(
+    `⚙️ **CẤU HÌNH MODEL & THÔNG SỐ RENDER:**\n\n` +
+    `• **Model AI:** \`${currentModel}\`\n` +
+    `• **Tỉ lệ khung hình:** \`${currentSettings.ratio}\`\n` +
+    `• **Thời lượng video:** \`${currentSettings.duration}s\`\n` +
+    `• **Độ phân giải:** \`${currentSettings.resolution}\`\n` +
+    `• **Số luồng song song:** \`${concurrencyLimit} luồng\`\n\n` +
+    `👉 Bấm các nút bên dưới để đổi nhanh thông số:`,
+    { parse_mode: 'Markdown', reply_markup: keyboard }
+  );
 });
 
 // Khởi động bot
