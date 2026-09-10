@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Bot, InlineKeyboard } from 'grammy';
 import { sessionManager } from './lib/botSession.js';
-import { executeVideoScene, uploadTelegramFile, getProjectsList } from './lib/botEngine.js';
+import { executeVideoScene, uploadTelegramFile, getProjectsList, listProjectVideos } from './lib/botEngine.js';
 import { buildPairs } from './lib/engine.js';
 import { DEFAULT_PROMPT, DEFAULT_MODEL_ID } from './data/config.js';
 
@@ -196,6 +196,7 @@ bot.command('start', async (ctx) => {
     `• /xem - Xem tình trạng mẻ file hiện tại\n` +
     `• /caidat - Đổi Tỉ lệ / Phân giải / Mode / Bật tắt Random & Khóa 1 lần\n` +
     `• /duan - Xem và chọn Dự án lưu video (79AI Projects)\n` +
+    `• /thuvien - Xem các video trong thư viện dự án 79AI\n` +
     `• /model - Xem và chọn Model AI (WAN 3.0, Seedance 2.0 Omni...)\n` +
     `• /prompt - Xem hoặc đổi Prompt tạo video\n` +
     `• /status - Xem tiến độ render\n` +
@@ -354,6 +355,46 @@ bot.command(['duan', 'project'], async (ctx) => {
     parse_mode: 'Markdown',
     reply_markup: kb,
   });
+});
+
+// Lệnh /thuvien hoặc /library - Xem danh sách video trong thư viện dự án 79AI
+bot.command(['thuvien', 'library'], async (ctx) => {
+  const waitMsg = await ctx.reply(`🔍 Đang tải danh sách video của dự án \`${getProjectLabel()}\`...`, { parse_mode: 'Markdown' });
+  try {
+    const videos = await listProjectVideos(currentProject.id);
+    if (!videos || videos.length === 0) {
+      return ctx.api.editMessageText(
+        ctx.chat.id,
+        waitMsg.message_id,
+        `📁 **THƯ VIỆN DỰ ÁN: \`${getProjectLabel()}\`**\n\nChưa có video nào trong dự án này trên 79AI.\n👉 Gõ /chay để tạo video mới nhé!`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+    let text = `📁 **THƯ VIỆN DỰ ÁN: \`${getProjectLabel()}\` (${videos.length} video)**\n\n`;
+    const showCount = Math.min(videos.length, 8);
+    for (let i = 0; i < showCount; i += 1) {
+      const v = videos[i];
+      const isDone = v.status.includes('SUCCESS') || !!v.url;
+      text += `• **Video #${i + 1}:** ${isDone ? '✅ Hoàn tất' : `⏳ ${v.status}`}\n`;
+      if (v.created_time) text += `  🕒 _${v.created_time}_\n`;
+      if (v.url) text += `  🔗 [Xem video](${v.url})\n`;
+    }
+    if (videos.length > 8) {
+      text += `\n... và ${videos.length - 8} video khác trong dự án này trên 79AI.`;
+    }
+    await ctx.api.editMessageText(
+      ctx.chat.id,
+      waitMsg.message_id,
+      text,
+      { parse_mode: 'Markdown', disable_web_page_preview: true }
+    );
+  } catch (err) {
+    await ctx.api.editMessageText(
+      ctx.chat.id,
+      waitMsg.message_id,
+      `❌ Không thể lấy danh sách video: ${err.message}`
+    );
+  }
 });
 
 function formatModelSelectText() {
