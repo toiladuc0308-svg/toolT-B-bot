@@ -11,6 +11,7 @@ import Storyboard from './components/Storyboard.jsx';
 import StatsPanel from './components/StatsPanel.jsx';
 import ProjectLibrary from './components/ProjectLibrary.jsx';
 import TokenSettings from './components/TokenSettings.jsx';
+import OpenArtAccountManager from './components/OpenArtAccountManager.jsx';
 
 function App() {
   const s = useStudio();
@@ -25,10 +26,11 @@ function App() {
             <h1 className="text-base font-bold">Seedance Fashion Studio</h1>
           </div>
           <span className="rounded-md bg-[#c7ff44]/10 px-2 py-0.5 text-[10px] font-bold text-[#c7ff44]">
-            79AI Edition
+            79AI & OpenArt Edition
           </span>
         </div>
         <div className="flex items-center gap-2 text-xs text-[#777777]">
+          <OpenArtAccountManager />
           <TokenSettings />
           <span className="rounded-full bg-white/5 px-3 py-1">
             {s.sessions.length} phiên

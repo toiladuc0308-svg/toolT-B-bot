@@ -16,11 +16,12 @@
   },
   "build": {
     "appId": "com.tandb.seedance",
+    "productName": "Seedance Studio",
     "directories": {
       "output": "release"
     },
     "win": {
-      "target": "nsis"
+      "target": ["portable", "nsis"]
     }
   },
   "keywords": [],
